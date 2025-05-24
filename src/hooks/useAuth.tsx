@@ -29,62 +29,79 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initialized, setInitialized] = useState(false);
   const { toast } = useToast();
 
+  // Handle session initialization and auth state changes
   useEffect(() => {
-    // Get initial session
-    const getInitialSession = async () => {
+    let mounted = true;
+    
+    async function getSession() {
       try {
         setLoading(true);
         
-        // Add a small delay to ensure Supabase client is fully initialized
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Get the current session
+        const { data, error } = await supabase.auth.getSession();
         
-        const { data: { session } } = await supabase.auth.getSession();
-        console.log("Initial session check:", session ? "Session found" : "No session");
-        
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          await fetchUserProfile(session.user.id);
+        if (error) {
+          console.error('Error getting session:', error.message);
+          if (mounted) {
+            setLoading(false);
+          }
+          return;
         }
         
-        // Only set loading to false after both session and profile are loaded
-        setLoading(false);
-      } catch (error) {
-        console.error('Error getting initial session:', error);
-        setLoading(false);
-      }
-    };
-
-    getInitialSession();
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        try {
-          console.log('Auth state changed:', event, session?.user?.email);
-          setLoading(true);
-          setSession(session);
-          setUser(session?.user ?? null);
+        const currentSession = data.session;
+        console.log('Current session:', currentSession ? 'Found' : 'Not found');
+        
+        if (mounted) {
+          setSession(currentSession);
+          setUser(currentSession?.user ?? null);
           
-          if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
-            await createOrUpdateProfile(session.user, session);
-            await fetchUserProfile(session.user.id);
-          } else if (!session) {
+          if (currentSession?.user) {
+            await fetchUserProfile(currentSession.user.id);
+          }
+          
+          setLoading(false);
+          setInitialized(true);
+        }
+      } catch (error) {
+        console.error('Unexpected error in getSession:', error);
+        if (mounted) {
+          setLoading(false);
+          setInitialized(true);
+        }
+      }
+    }
+    
+    getSession();
+    
+    // Set up auth state change listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, currentSession) => {
+        console.log('Auth state changed:', event, currentSession?.user?.email);
+        
+        if (mounted) {
+          setLoading(true);
+          setSession(currentSession);
+          setUser(currentSession?.user ?? null);
+          
+          if (currentSession?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED')) {
+            await createOrUpdateProfile(currentSession.user, currentSession);
+            await fetchUserProfile(currentSession.user.id);
+          } else if (!currentSession) {
             setProfile(null);
           }
-          // Only set loading to false after all operations are complete
-          setLoading(false);
-        } catch (error) {
-          console.error('Error in auth state change:', error);
+          
           setLoading(false);
         }
       }
     );
-
-    return () => subscription.unsubscribe();
+    
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const fetchUserProfile = async (userId: string) => {
