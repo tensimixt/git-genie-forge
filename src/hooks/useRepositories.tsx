@@ -34,8 +34,12 @@ export function useRepositories() {
       // Explicitly log the function call
       console.log('Invoking edge function: fetch-github-repos');
       
+      // Ensure we're passing the Authorization header with the current access token
       const { data, error: funcError } = await supabase.functions.invoke('fetch-github-repos', {
-        body: { searchQuery }
+        body: { searchQuery },
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`
+        }
       });
 
       if (funcError) {
