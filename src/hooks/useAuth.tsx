@@ -18,6 +18,7 @@ interface AuthContextType {
   session: Session | null;
   profile: UserProfile | null;
   loading: boolean;
+  sessionFullyRestored: boolean;
   signInWithGitHub: () => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -29,6 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionFullyRestored, setSessionFullyRestored] = useState(false);
   const { toast } = useToast();
 
   // This effect ensures loading state is reset after a timeout
@@ -67,10 +69,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         
         setLoading(false);
+        // Mark session as fully restored
+        setSessionFullyRestored(true);
       } catch (error) {
         console.error('Error getting initial session:', error);
         if (mounted) {
           setLoading(false);
+          setSessionFullyRestored(true); // Even on error, we've completed the restoration attempt
         }
       }
     };
@@ -99,6 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         
         setLoading(false);
+        setSessionFullyRestored(true);
       }
     );
 
@@ -196,6 +202,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     session,
     profile,
     loading,
+    sessionFullyRestored,
     signInWithGitHub,
     signOut,
   };
