@@ -21,7 +21,7 @@ interface Repository {
 }
 
 export function useRepositories() {
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,11 +60,10 @@ export function useRepositories() {
 
   useEffect(() => {
     // Only fetch repositories when auth is not in loading state and both user and profile exist
-    const { loading: authLoading } = useAuth();
     if (!authLoading && user && profile) {
       fetchRepositories();
     }
-  }, [user, profile, useAuth().loading]);
+  }, [user, profile, authLoading]);
 
   return {
     repositories,
