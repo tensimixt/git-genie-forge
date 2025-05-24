@@ -31,15 +31,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
+  // This effect ensures loading state is reset after a timeout
+  // even if session restoration fails
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (loading) {
+        console.log('Forcing loading state to false after timeout');
+        setLoading(false);
+      }
+    }, 3000); // 3 second timeout
+    
+    return () => clearTimeout(timer);
+  }, [loading]);
+
   useEffect(() => {
     let mounted = true;
     
     // Get initial session
     const getInitialSession = async () => {
       try {
+        console.log('Getting initial session...');
         const { data } = await supabase.auth.getSession();
         
         if (!mounted) return;
+        
+        console.log('Session data:', data ? 'Found' : 'Not found');
         
         if (data && data.session) {
           setSession(data.session);
