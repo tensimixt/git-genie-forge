@@ -29,75 +29,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [initialized, setInitialized] = useState(false);
   const { toast } = useToast();
 
-  // Handle session initialization and auth state changes
   useEffect(() => {
     let mounted = true;
     
-    async function getSession() {
+    // Get initial session
+    const getInitialSession = async () => {
       try {
-        setLoading(true);
+        const { data } = await supabase.auth.getSession();
         
-        // Get the current session
-        const { data, error } = await supabase.auth.getSession();
+        if (!mounted) return;
         
-        if (error) {
-          console.error('Error getting session:', error.message);
-          if (mounted) {
-            setLoading(false);
+        if (data && data.session) {
+          setSession(data.session);
+          setUser(data.session.user);
+          
+          if (data.session.user) {
+            await fetchUserProfile(data.session.user.id);
           }
-          return;
         }
         
-        const currentSession = data.session;
-        console.log('Current session:', currentSession ? 'Found' : 'Not found');
-        
-        if (mounted) {
-          setSession(currentSession);
-          setUser(currentSession?.user ?? null);
-          
-          if (currentSession?.user) {
-            await fetchUserProfile(currentSession.user.id);
-          }
-          
-          setLoading(false);
-          setInitialized(true);
-        }
+        setLoading(false);
       } catch (error) {
-        console.error('Unexpected error in getSession:', error);
+        console.error('Error getting initial session:', error);
         if (mounted) {
           setLoading(false);
-          setInitialized(true);
         }
       }
-    }
-    
-    getSession();
-    
-    // Set up auth state change listener
+    };
+
+    getInitialSession();
+
+    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, currentSession) => {
-        console.log('Auth state changed:', event, currentSession?.user?.email);
+      async (event, newSession) => {
+        console.log('Auth state changed:', event, newSession?.user?.email);
         
-        if (mounted) {
-          setLoading(true);
-          setSession(currentSession);
-          setUser(currentSession?.user ?? null);
+        if (!mounted) return;
+        
+        if (newSession) {
+          setSession(newSession);
+          setUser(newSession.user);
           
-          if (currentSession?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED')) {
-            await createOrUpdateProfile(currentSession.user, currentSession);
-            await fetchUserProfile(currentSession.user.id);
-          } else if (!currentSession) {
-            setProfile(null);
+          if (event === 'SIGNED_IN') {
+            await createOrUpdateProfile(newSession.user, newSession);
+            await fetchUserProfile(newSession.user.id);
           }
-          
-          setLoading(false);
+        } else {
+          setSession(null);
+          setUser(null);
+          setProfile(null);
         }
+        
+        setLoading(false);
       }
     );
-    
+
     return () => {
       mounted = false;
       subscription.unsubscribe();
@@ -153,7 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         provider: 'github',
         options: {
           scopes: 'repo read:user',
-          redirectTo: `${window.location.origin}${window.location.pathname}`
+          redirectTo: `${window.location.origin}/`
         }
       });
       
