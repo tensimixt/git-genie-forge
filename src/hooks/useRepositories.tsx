@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -60,10 +59,12 @@ export function useRepositories() {
   };
 
   useEffect(() => {
-    if (user && profile) {
+    // Only fetch repositories when auth is not in loading state and both user and profile exist
+    const { loading: authLoading } = useAuth();
+    if (!authLoading && user && profile) {
       fetchRepositories();
     }
-  }, [user, profile]);
+  }, [user, profile, useAuth().loading]);
 
   return {
     repositories,
