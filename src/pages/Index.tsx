@@ -7,7 +7,7 @@ import { GitHubAuth } from "@/components/GitHubAuth";
 import { RepositoryList } from "@/components/RepositoryList";
 import { UserProfile } from "@/components/UserProfile";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase, logAuthState } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/client";
 
 const Index = () => {
   const { user, profile, loading, sessionFullyRestored } = useAuth();
@@ -59,11 +59,23 @@ const Index = () => {
     );
   }
 
-  const toggleDebugMode = async () => {
+  const toggleDebugMode = () => {
     setDebugMode(!debugMode);
     if (!debugMode) {
       // Log auth state when enabling debug mode
-      await logAuthState();
+      const checkSession = async () => {
+        try {
+          const { data } = await supabase.auth.getSession();
+          console.log('Current session state:', {
+            has_session: !!data?.session,
+            has_access_token: !!data?.session?.access_token,
+            user_id: data?.session?.user?.id
+          });
+        } catch (err) {
+          console.error('Error checking session:', err);
+        }
+      };
+      checkSession();
     }
   };
 
@@ -152,7 +164,16 @@ const Index = () => {
               <Button 
                 onClick={async () => {
                   console.log("Manual session check triggered");
-                  await logAuthState();
+                  try {
+                    const { data } = await supabase.auth.getSession();
+                    console.log('Current session state:', {
+                      has_session: !!data?.session,
+                      has_access_token: !!data?.session?.access_token,
+                      user_id: data?.session?.user?.id
+                    });
+                  } catch (err) {
+                    console.error('Error checking session:', err);
+                  }
                   setForceRefresh(prev => prev + 1);
                 }}
                 variant="secondary"
