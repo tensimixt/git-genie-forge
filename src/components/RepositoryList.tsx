@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Star, GitFork, Calendar, ExternalLink, MessageSquare } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useRepositories } from "@/hooks/useRepositories";
+import { supabase } from '@/integrations/supabase/client';
 
 interface Repository {
   id: number;
@@ -26,7 +26,41 @@ interface RepositoryListProps {
 }
 
 export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: RepositoryListProps) => {
-  const { repositories, loading, error, fetchRepositories } = useRepositories();
+  const [repositories, setRepositories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchRepositories = async () => {
+      if (!user) {
+        setRepositories([]);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        console.log('Directly fetching repositories for user:', user.id);
+        const { data, error: funcError } = await supabase.functions.invoke('fetch-github-repos', {
+          body: { searchQuery: searchTerm }
+        });
+
+        if (funcError) throw funcError;
+
+        console.log('Repositories fetched:', data.repositories ? data.repositories.length : 0);
+        setRepositories(data.repositories || []);
+      } catch (err) {
+        console.error('Error fetching repositories:', err);
+        setError('Failed to fetch repositories from GitHub');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRepositories();
+  }, [user, searchTerm]);
 
   // Filter repositories based on search term
   const filteredRepositories = repositories.filter(repo =>
@@ -82,7 +116,7 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
       <div className="text-center py-12">
         <p className="text-red-600 text-lg">{error}</p>
         <button 
-          onClick={() => fetchRepositories()}
+          onClick={() => window.location.reload()}
           className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
         >
           Retry
