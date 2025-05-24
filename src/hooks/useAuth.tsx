@@ -1,4 +1,3 @@
-
 import { useState, useEffect, createContext, useContext } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
@@ -35,13 +34,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Get initial session
     const getInitialSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await fetchUserProfile(session.user.id);
+      try {
+        setLoading(true);
+        const { data: { session } } = await supabase.auth.getSession();
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (session?.user) {
+          await fetchUserProfile(session.user.id);
+        }
+        // Only set loading to false after both session and profile are loaded
+        setLoading(false);
+      } catch (error) {
+        console.error('Error getting initial session:', error);
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     getInitialSession();
@@ -49,17 +56,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state changed:', event, session?.user?.email);
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user && event === 'SIGNED_IN') {
-          await createOrUpdateProfile(session.user, session);
-          await fetchUserProfile(session.user.id);
-        } else if (!session) {
-          setProfile(null);
+        try {
+          console.log('Auth state changed:', event, session?.user?.email);
+          setLoading(true);
+          setSession(session);
+          setUser(session?.user ?? null);
+          
+          if (session?.user && event === 'SIGNED_IN') {
+            await createOrUpdateProfile(session.user, session);
+            await fetchUserProfile(session.user.id);
+          } else if (!session) {
+            setProfile(null);
+          }
+          // Only set loading to false after all operations are complete
+          setLoading(false);
+        } catch (error) {
+          console.error('Error in auth state change:', error);
+          setLoading(false);
         }
-        setLoading(false);
       }
     );
 
