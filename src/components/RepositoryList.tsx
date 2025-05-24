@@ -2,10 +2,11 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Star, GitFork, Calendar, ExternalLink, MessageSquare, RefreshCw } from "lucide-react";
+import { Star, GitFork, Calendar, ExternalLink, MessageSquare, RefreshCw, Bug } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useRepositories } from '@/hooks/useRepositories';
 
 interface Repository {
   id: number;
@@ -28,10 +29,8 @@ interface RepositoryListProps {
 
 export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: RepositoryListProps) => {
   const { sessionFullyRestored } = useAuth();
-  const [repositories, setRepositories] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [retryCount, setRetryCount] = useState(0);
+  const { repositories, loading, error, debugLogs, refetch } = useRepositories();
+  const [showDebugLogs, setShowDebugLogs] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [debugInfo, setDebugInfo] = useState(null);
 
@@ -81,67 +80,13 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
     }
   };
 
-  const fetchRepositories = async () => {
-    if (!user || !sessionFullyRestored) {
-      setRepositories([]);
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Wait for auth to be ready
-      const isAuthReady = await checkAuthState();
-      
-      if (!isAuthReady) {
-        throw new Error('GitHub authentication not ready. Please try logging in again.');
-      }
-
-      console.log('Fetching repositories for user:', user.id);
-      
-      // Get the current session to ensure we have a valid token
-      const { data: sessionData } = await supabase.auth.getSession();
-      console.log('Session found, access token available:', !!sessionData?.session?.access_token);
-      
-      // Explicitly log the function call
-      console.log('Invoking edge function: fetch-github-repos');
-      
-      const { data, error: funcError } = await supabase.functions.invoke('fetch-github-repos', {
-        body: { searchQuery: searchTerm }
-      });
-
-      if (funcError) {
-        console.error('Function error:', funcError);
-        throw funcError;
-      }
-
-      if (data && data.repositories) {
-        console.log('Repositories fetched:', data.repositories.length);
-        setRepositories(data.repositories);
-      } else {
-        console.error('No repositories data returned:', data);
-        throw new Error('No repository data returned from GitHub');
-      }
-    } catch (err) {
-      console.error('Error fetching repositories:', err);
-      setError(err.message || 'Failed to fetch repositories from GitHub');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // Listen for auth state changes
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('Auth state changed:', event, session?.user?.id);
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          // Wait a bit for the session to be fully established
-          setTimeout(() => {
-            setRetryCount(prev => prev + 1);
-          }, 1000);
+          await checkAuthState();
         }
       }
     );
@@ -149,58 +94,12 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
     return () => subscription.unsubscribe();
   }, []);
 
-  // Initial fetch when component mounts or dependencies change
+  // Initial auth check
   useEffect(() => {
     if (user && sessionFullyRestored) {
-      console.log('User and session fully restored, fetching repositories');
-      fetchRepositories();
-    } else {
-      setRepositories([]);
-      setLoading(false);
-      setAuthReady(false);
+      checkAuthState();
     }
-  }, [user, searchTerm, retryCount, sessionFullyRestored]);
-
-  // Auto-retry mechanism for page refresh cases
-  useEffect(() => {
-    if (user && repositories.length === 0 && !loading && !error && retryCount < 3 && sessionFullyRestored) {
-      const timer = setTimeout(() => {
-        console.log('No repositories found after initial load, retrying...', retryCount + 1);
-        setRetryCount(prev => prev + 1);
-      }, 2000);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [repositories, loading, error, retryCount, user, sessionFullyRestored]);
-
-  // Add a manual refresh function that forces token refresh
-  const manualRefresh = async () => {
-    try {
-      console.log('Manual refresh triggered, refreshing session...');
-      
-      // First refresh the session
-      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-      
-      if (refreshError) {
-        console.error('Error refreshing session:', refreshError);
-        setError('Failed to refresh your session. Please try signing in again.');
-        return;
-      }
-      
-      if (refreshData && refreshData.session) {
-        console.log('Session refreshed successfully, checking auth state...');
-        await checkAuthState();
-        console.log('Fetching repositories with fresh session...');
-        fetchRepositories();
-      } else {
-        console.error('No session after refresh');
-        setError('Your session could not be restored. Please sign in again.');
-      }
-    } catch (err) {
-      console.error('Error in manual refresh:', err);
-      setError('An error occurred during refresh. Please try again.');
-    }
-  };
+  }, [user, sessionFullyRestored]);
 
   // Filter repositories based on search term
   const filteredRepositories = repositories.filter(repo =>
@@ -226,6 +125,24 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
       Go: 'bg-cyan-500',
     };
     return colors[language] || 'bg-gray-500';
+  };
+
+  // Manual refresh function with direct fetch fallback
+  const manualRefresh = async () => {
+    try {
+      console.log('Manual refresh triggered');
+      
+      // First check auth state
+      const isAuthReady = await checkAuthState();
+      if (!isAuthReady) {
+        console.log('Auth not ready, attempting to refresh session');
+      }
+      
+      // Use the refetch function from useRepositories
+      refetch();
+    } catch (err) {
+      console.error('Error in manual refresh:', err);
+    }
   };
 
   if (loading) {
@@ -255,13 +172,22 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
     return (
       <div className="text-center py-12">
         <p className="text-red-600 text-lg">{error}</p>
-        <Button 
-          onClick={manualRefresh}
-          className="mt-4"
-        >
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Refresh Session & Retry
-        </Button>
+        <div className="flex justify-center space-x-4 mt-4">
+          <Button 
+            onClick={manualRefresh}
+          >
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh Session & Retry
+          </Button>
+          <Button 
+            variant="outline"
+            onClick={() => setShowDebugLogs(!showDebugLogs)}
+          >
+            <Bug className="w-4 h-4 mr-2" />
+            {showDebugLogs ? 'Hide Debug Logs' : 'Show Debug Logs'}
+          </Button>
+        </div>
+        
         {error.includes('authentication') && (
           <p className="text-sm text-gray-600 mt-2">
             You may need to sign in with GitHub again
@@ -271,8 +197,22 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
         {/* Debug info display */}
         {debugInfo && (
           <div className="mt-6 p-4 bg-gray-100 rounded text-left text-xs text-gray-700 max-w-md mx-auto">
-            <h4 className="font-bold mb-2">Debug Info:</h4>
+            <h4 className="font-bold mb-2">Session Info:</h4>
             <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+          </div>
+        )}
+        
+        {/* Debug logs display */}
+        {showDebugLogs && debugLogs && debugLogs.length > 0 && (
+          <div className="mt-6 p-4 bg-gray-100 rounded text-left text-xs text-gray-700 max-w-md mx-auto">
+            <h4 className="font-bold mb-2">Debug Logs:</h4>
+            <div className="max-h-96 overflow-auto">
+              {debugLogs.map((log, index) => (
+                <div key={index} className="mb-1">
+                  <span className="text-gray-500">{log.time.substring(11, 19)}</span>: {log.message}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -281,8 +221,16 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
 
   return (
     <div>
-      {/* Debug button */}
-      <div className="mb-4 flex justify-end">
+      {/* Debug and refresh buttons */}
+      <div className="mb-4 flex justify-between">
+        <Button 
+          variant="outline" 
+          size="sm"
+          onClick={() => setShowDebugLogs(!showDebugLogs)}
+        >
+          <Bug className="w-4 h-4 mr-2" />
+          {showDebugLogs ? 'Hide Debug Logs' : 'Show Debug Logs'}
+        </Button>
         <Button 
           onClick={manualRefresh}
           variant="outline"
@@ -292,6 +240,20 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
           Refresh Session
         </Button>
       </div>
+      
+      {/* Debug logs display */}
+      {showDebugLogs && debugLogs && debugLogs.length > 0 && (
+        <div className="mb-6 p-4 bg-gray-100 rounded text-xs text-gray-700">
+          <h4 className="font-bold mb-2">Debug Logs:</h4>
+          <div className="max-h-40 overflow-auto">
+            {debugLogs.map((log, index) => (
+              <div key={index} className="mb-1">
+                <span className="text-gray-500">{log.time.substring(11, 19)}</span>: {log.message}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredRepositories.map((repo) => (
@@ -366,20 +328,42 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
             <p className="text-gray-400 text-sm mt-2">
               {searchTerm ? 'Try adjusting your search terms' : 'Connect to GitHub to see your repositories'}
             </p>
-            <Button 
-              onClick={manualRefresh}
-              className="mt-4"
-              variant="outline"
-            >
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Refresh Session & Repositories
-            </Button>
+            <div className="flex justify-center space-x-4 mt-4">
+              <Button 
+                onClick={manualRefresh}
+                variant="outline"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh Session & Repositories
+              </Button>
+              <Button 
+                variant="outline"
+                onClick={() => setShowDebugLogs(!showDebugLogs)}
+              >
+                <Bug className="w-4 h-4 mr-2" />
+                {showDebugLogs ? 'Hide Debug Logs' : 'Show Debug Logs'}
+              </Button>
+            </div>
             
             {/* Debug info display */}
             {debugInfo && (
               <div className="mt-6 p-4 bg-gray-100 rounded text-left text-xs text-gray-700 max-w-md mx-auto">
-                <h4 className="font-bold mb-2">Debug Info:</h4>
+                <h4 className="font-bold mb-2">Session Info:</h4>
                 <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+              </div>
+            )}
+            
+            {/* Debug logs display */}
+            {showDebugLogs && debugLogs && debugLogs.length > 0 && (
+              <div className="mt-6 p-4 bg-gray-100 rounded text-left text-xs text-gray-700 max-w-md mx-auto">
+                <h4 className="font-bold mb-2">Debug Logs:</h4>
+                <div className="max-h-96 overflow-auto">
+                  {debugLogs.map((log, index) => (
+                    <div key={index} className="mb-1">
+                      <span className="text-gray-500">{log.time.substring(11, 19)}</span>: {log.message}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
