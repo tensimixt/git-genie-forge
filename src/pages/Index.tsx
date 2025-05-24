@@ -3,37 +3,29 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Github, Search, Star, GitFork, Calendar } from "lucide-react";
+import { Github, Search } from "lucide-react";
 import { GitHubAuth } from "@/components/GitHubAuth";
 import { RepositoryList } from "@/components/RepositoryList";
 import { UserProfile } from "@/components/UserProfile";
+import { useAuth } from "@/hooks/useAuth";
 
 const Index = () => {
-  const [user, setUser] = useState(null);
-  const [repositories, setRepositories] = useState([]);
+  const { user, profile, loading } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
-  const [loading, setLoading] = useState(false);
 
-  // Check if user is already authenticated
-  useEffect(() => {
-    const savedUser = localStorage.getItem('github_user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-  }, []);
+  // Show loading state while checking authentication
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
-  const handleAuthSuccess = (userData) => {
-    setUser(userData);
-    localStorage.setItem('github_user', JSON.stringify(userData));
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-    setRepositories([]);
-    localStorage.removeItem('github_user');
-    localStorage.removeItem('github_token');
-  };
-
+  // Show login screen if not authenticated
   if (!user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
@@ -50,7 +42,7 @@ const Index = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <GitHubAuth onAuthSuccess={handleAuthSuccess} />
+            <GitHubAuth />
           </CardContent>
         </Card>
       </div>
@@ -68,14 +60,16 @@ const Index = () => {
             </div>
             <h1 className="text-xl font-bold">Git Genie</h1>
           </div>
-          <UserProfile user={user} onLogout={handleLogout} />
+          <UserProfile />
         </div>
       </header>
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Your Repositories</h2>
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">
+            Welcome back, {profile?.username || user.email}!
+          </h2>
           <p className="text-gray-600">Select a repository to start chatting with AI about your code</p>
         </div>
 

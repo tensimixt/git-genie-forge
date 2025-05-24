@@ -123,6 +123,41 @@ export type Database = {
         }
         Relationships: []
       }
+      chat_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          metadata: Json | null
+          role: string
+          session_id: string | null
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          role: string
+          session_id?: string | null
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          role?: string
+          session_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "repo_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       GeneratedApp: {
         Row: {
           code: string
@@ -181,6 +216,72 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      repo_sessions: {
+        Row: {
+          created_at: string
+          github_repo_id: number
+          id: string
+          repo_data: Json | null
+          repo_full_name: string
+          repo_name: string
+          repo_url: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          github_repo_id: number
+          id?: string
+          repo_data?: Json | null
+          repo_full_name: string
+          repo_name: string
+          repo_url: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          github_repo_id?: number
+          id?: string
+          repo_data?: Json | null
+          repo_full_name?: string
+          repo_name?: string
+          repo_url?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      user_profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          github_access_token: string | null
+          github_id: string | null
+          id: string
+          updated_at: string
+          username: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          github_access_token?: string | null
+          github_id?: string | null
+          id: string
+          updated_at?: string
+          username?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          github_access_token?: string | null
+          github_id?: string | null
+          id?: string
+          updated_at?: string
+          username?: string | null
+        }
+        Relationships: []
       }
     }
     Views: {

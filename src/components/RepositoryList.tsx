@@ -1,10 +1,10 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Star, GitFork, Calendar, ExternalLink, MessageSquare } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useRepositories } from "@/hooks/useRepositories";
 
 interface Repository {
   id: number;
@@ -26,80 +26,9 @@ interface RepositoryListProps {
 }
 
 export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: RepositoryListProps) => {
-  const [repositories, setRepositories] = useState<Repository[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { repositories, loading, error, fetchRepositories } = useRepositories();
 
-  useEffect(() => {
-    fetchRepositories();
-  }, [user]);
-
-  const fetchRepositories = async () => {
-    setLoading(true);
-    
-    try {
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Mock repository data - in real implementation, this would come from GitHub API
-      const mockRepos: Repository[] = [
-        {
-          id: 1,
-          name: "awesome-web-app",
-          full_name: `${user.login}/awesome-web-app`,
-          description: "A full-stack web application built with React and Node.js",
-          html_url: `https://github.com/${user.login}/awesome-web-app`,
-          language: "TypeScript",
-          stargazers_count: 42,
-          forks_count: 8,
-          updated_at: "2024-01-15T10:30:00Z",
-          private: false
-        },
-        {
-          id: 2,
-          name: "api-service",
-          full_name: `${user.login}/api-service`,
-          description: "RESTful API service with authentication and database integration",
-          html_url: `https://github.com/${user.login}/api-service`,
-          language: "JavaScript",
-          stargazers_count: 15,
-          forks_count: 3,
-          updated_at: "2024-01-10T14:20:00Z",
-          private: true
-        },
-        {
-          id: 3,
-          name: "mobile-app",
-          full_name: `${user.login}/mobile-app`,
-          description: "Cross-platform mobile application using React Native",
-          html_url: `https://github.com/${user.login}/mobile-app`,
-          language: "JavaScript",
-          stargazers_count: 28,
-          forks_count: 5,
-          updated_at: "2024-01-12T09:15:00Z",
-          private: false
-        },
-        {
-          id: 4,
-          name: "data-analytics",
-          full_name: `${user.login}/data-analytics`,
-          description: "Data analysis and visualization tools",
-          html_url: `https://github.com/${user.login}/data-analytics`,
-          language: "Python",
-          stargazers_count: 67,
-          forks_count: 12,
-          updated_at: "2024-01-08T16:45:00Z",
-          private: false
-        }
-      ];
-      
-      setRepositories(mockRepos);
-    } catch (error) {
-      console.error('Error fetching repositories:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Filter repositories based on search term
   const filteredRepositories = repositories.filter(repo =>
     repo.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     repo.description?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -144,6 +73,20 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
             </CardContent>
           </Card>
         ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-red-600 text-lg">{error}</p>
+        <button 
+          onClick={() => fetchRepositories()}
+          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -220,7 +163,7 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
         <div className="col-span-full text-center py-12">
           <p className="text-gray-500 text-lg">No repositories found</p>
           <p className="text-gray-400 text-sm mt-2">
-            {searchTerm ? 'Try adjusting your search terms' : 'No repositories available'}
+            {searchTerm ? 'Try adjusting your search terms' : 'Connect to GitHub to see your repositories'}
           </p>
         </div>
       )}
