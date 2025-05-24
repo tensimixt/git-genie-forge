@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Star, GitFork, Calendar, ExternalLink, MessageSquare, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { supabase, debugFunctionCall, logAuthState } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 
 interface Repository {
@@ -43,11 +43,11 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
     }
 
     try {
-      // Log auth state for debugging
-      const session = await logAuthState();
+      // Get the current session to ensure we have a valid token
+      const { data: { session }, error } = await supabase.auth.getSession();
       
-      if (!session) {
-        console.log('No valid session found in checkAuthState');
+      if (error || !session) {
+        console.log('No valid session found');
         setAuthReady(false);
         return false;
       }
@@ -101,9 +101,15 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
 
       console.log('Fetching repositories for user:', user.id);
       
-      // Use the debug function call wrapper
-      const { data, error: funcError } = await debugFunctionCall('fetch-github-repos', { 
-        searchQuery: searchTerm 
+      // Get the current session to ensure we have a valid token
+      const { data: sessionData } = await supabase.auth.getSession();
+      console.log('Session found, access token available:', !!sessionData?.session?.access_token);
+      
+      // Explicitly log the function call
+      console.log('Invoking edge function: fetch-github-repos');
+      
+      const { data, error: funcError } = await supabase.functions.invoke('fetch-github-repos', {
+        body: { searchQuery: searchTerm }
       });
 
       if (funcError) {
