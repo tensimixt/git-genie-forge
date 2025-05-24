@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Star, GitFork, Calendar, ExternalLink, MessageSquare, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 
 interface Repository {
   id: number;
@@ -26,6 +27,7 @@ interface RepositoryListProps {
 }
 
 export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: RepositoryListProps) => {
+  const { sessionFullyRestored } = useAuth();
   const [repositories, setRepositories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -70,7 +72,7 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
   };
 
   const fetchRepositories = async () => {
-    if (!user) {
+    if (!user || !sessionFullyRestored) {
       setRepositories([]);
       setLoading(false);
       return;
@@ -132,18 +134,18 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
 
   // Initial fetch when component mounts or dependencies change
   useEffect(() => {
-    if (user) {
+    if (user && sessionFullyRestored) {
       fetchRepositories();
     } else {
       setRepositories([]);
       setLoading(false);
       setAuthReady(false);
     }
-  }, [user, searchTerm, retryCount]);
+  }, [user, searchTerm, retryCount, sessionFullyRestored]);
 
   // Auto-retry mechanism for page refresh cases
   useEffect(() => {
-    if (user && repositories.length === 0 && !loading && !error && retryCount < 3) {
+    if (user && repositories.length === 0 && !loading && !error && retryCount < 3 && sessionFullyRestored) {
       const timer = setTimeout(() => {
         console.log('No repositories found after initial load, retrying...', retryCount + 1);
         setRetryCount(prev => prev + 1);
@@ -151,7 +153,7 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
       
       return () => clearTimeout(timer);
     }
-  }, [repositories, loading, error, retryCount, user]);
+  }, [repositories, loading, error, retryCount, user, sessionFullyRestored]);
 
   // Filter repositories based on search term
   const filteredRepositories = repositories.filter(repo =>
