@@ -36,13 +36,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const getInitialSession = async () => {
       try {
         setLoading(true);
+        
+        // Add a small delay to ensure Supabase client is fully initialized
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
         const { data: { session } } = await supabase.auth.getSession();
+        console.log("Initial session check:", session ? "Session found" : "No session");
+        
         setSession(session);
         setUser(session?.user ?? null);
         
         if (session?.user) {
           await fetchUserProfile(session.user.id);
         }
+        
         // Only set loading to false after both session and profile are loaded
         setLoading(false);
       } catch (error) {
@@ -62,7 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(session);
           setUser(session?.user ?? null);
           
-          if (session?.user && event === 'SIGNED_IN') {
+          if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
             await createOrUpdateProfile(session.user, session);
             await fetchUserProfile(session.user.id);
           } else if (!session) {
@@ -129,7 +136,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         provider: 'github',
         options: {
           scopes: 'repo read:user',
-          redirectTo: `${window.location.origin}/`
+          redirectTo: `${window.location.origin}${window.location.pathname}`
         }
       });
       
