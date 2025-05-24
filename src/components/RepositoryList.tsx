@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Star, GitFork, Calendar, ExternalLink, MessageSquare } from "lucide-react";
+import { Star, GitFork, Calendar, ExternalLink, MessageSquare, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from '@/integrations/supabase/client';
 
@@ -29,38 +29,62 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
   const [repositories, setRepositories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
 
+  const fetchRepositories = async () => {
+    if (!user) {
+      setRepositories([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      console.log('Directly fetching repositories for user:', user.id);
+      
+      // Add a small delay to ensure auth token is fully available
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const { data, error: funcError } = await supabase.functions.invoke('fetch-github-repos', {
+        body: { searchQuery: searchTerm }
+      });
+
+      if (funcError) throw funcError;
+
+      if (data && data.repositories) {
+        console.log('Repositories fetched:', data.repositories.length);
+        setRepositories(data.repositories);
+      } else {
+        console.error('No repositories data returned');
+        setError('No repository data returned from GitHub');
+      }
+    } catch (err) {
+      console.error('Error fetching repositories:', err);
+      setError('Failed to fetch repositories from GitHub');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initial fetch when component mounts
   useEffect(() => {
-    const fetchRepositories = async () => {
-      if (!user) {
-        setRepositories([]);
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      setError(null);
-
-      try {
-        console.log('Directly fetching repositories for user:', user.id);
-        const { data, error: funcError } = await supabase.functions.invoke('fetch-github-repos', {
-          body: { searchQuery: searchTerm }
-        });
-
-        if (funcError) throw funcError;
-
-        console.log('Repositories fetched:', data.repositories ? data.repositories.length : 0);
-        setRepositories(data.repositories || []);
-      } catch (err) {
-        console.error('Error fetching repositories:', err);
-        setError('Failed to fetch repositories from GitHub');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchRepositories();
-  }, [user, searchTerm]);
+  }, [user, searchTerm, retryCount]);
+
+  // Add a retry mechanism for page refresh cases
+  useEffect(() => {
+    // Check if we need to retry after a timeout
+    if (repositories.length === 0 && !loading && !error) {
+      const timer = setTimeout(() => {
+        console.log('No repositories found after initial load, retrying...');
+        setRetryCount(prev => prev + 1);
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [repositories, loading, error]);
 
   // Filter repositories based on search term
   const filteredRepositories = repositories.filter(repo =>
@@ -115,12 +139,13 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
     return (
       <div className="text-center py-12">
         <p className="text-red-600 text-lg">{error}</p>
-        <button 
-          onClick={() => window.location.reload()}
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        <Button 
+          onClick={() => setRetryCount(prev => prev + 1)}
+          className="mt-4"
         >
+          <RefreshCw className="w-4 h-4 mr-2" />
           Retry
-        </button>
+        </Button>
       </div>
     );
   }
@@ -199,6 +224,14 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
           <p className="text-gray-400 text-sm mt-2">
             {searchTerm ? 'Try adjusting your search terms' : 'Connect to GitHub to see your repositories'}
           </p>
+          <Button 
+            onClick={() => setRetryCount(prev => prev + 1)}
+            className="mt-4"
+            variant="outline"
+          >
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh Repositories
+          </Button>
         </div>
       )}
     </div>
