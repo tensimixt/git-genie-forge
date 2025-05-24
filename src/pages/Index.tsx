@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,10 +7,20 @@ import { GitHubAuth } from "@/components/GitHubAuth";
 import { RepositoryList } from "@/components/RepositoryList";
 import { UserProfile } from "@/components/UserProfile";
 import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 
 const Index = () => {
   const { user, profile, loading } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
+  const [forceRefresh, setForceRefresh] = useState(0);
+
+  // Force a refresh of child components when auth state changes
+  useEffect(() => {
+    if (user && profile && !loading) {
+      console.log("Auth state ready, triggering repository refresh");
+      setForceRefresh(prev => prev + 1);
+    }
+  }, [user, profile, loading]);
 
   // Show loading state while checking authentication
   if (loading) {
@@ -89,6 +98,7 @@ const Index = () => {
 
         {/* Repository List */}
         <RepositoryList 
+          key={forceRefresh} // This forces the component to remount when auth state changes
           user={user} 
           searchTerm={searchTerm}
           onRepositorySelect={(repo) => {
