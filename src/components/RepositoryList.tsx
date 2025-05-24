@@ -33,33 +33,39 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
   const [authReady, setAuthReady] = useState(false);
 
   // Check if user is properly authenticated with GitHub token
-  const checkAuthState = async () => {
+   const checkAuthState = async () => {
     if (!user) {
       setAuthReady(false);
       return false;
     }
-
+  
     try {
-      // Get the current session to ensure we have a valid token
-      const { data: { session }, error } = await supabase.auth.getSession();
+      // Force refresh the session
+      const { data: { session }, error } = await supabase.auth.refreshSession();
       
       if (error || !session) {
-        console.log('No valid session found');
+        console.log('No valid session found:', error);
         setAuthReady(false);
         return false;
       }
-
-      // Check if we have the GitHub provider token
+  
+      // Check for GitHub provider token in multiple locations
       const hasGithubToken = session.provider_token || 
-                           session.user?.user_metadata?.provider_token ||
-                           session.user?.app_metadata?.provider_token;
-
+                            session.provider_refresh_token ||
+                            session.user?.user_metadata?.provider_token;
+  
+      console.log('Session data:', {
+        hasToken: !!hasGithubToken,
+        provider: session.user?.app_metadata?.provider,
+        userId: session.user?.id
+      });
+  
       if (!hasGithubToken) {
         console.log('No GitHub token found in session');
         setAuthReady(false);
         return false;
       }
-
+  
       setAuthReady(true);
       return true;
     } catch (err) {
