@@ -28,46 +28,9 @@ interface RepositoryListProps {
 export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: RepositoryListProps) => {
   const [repositories, setRepositories] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
-  const [authReady, setAuthReady] = useState(false);
-
-  // Check if user is properly authenticated with GitHub token
-  const checkAuthState = async () => {
-    if (!user) {
-      setAuthReady(false);
-      return false;
-    }
-
-    try {
-      // Get the current session to ensure we have a valid token
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      if (error || !session) {
-        console.log('No valid session found');
-        setAuthReady(false);
-        return false;
-      }
-
-      // Check if we have the GitHub provider token
-      const hasGithubToken = session.provider_token || 
-                           session.user?.user_metadata?.provider_token ||
-                           session.user?.app_metadata?.provider_token;
-
-      if (!hasGithubToken) {
-        console.log('No GitHub token found in session');
-        setAuthReady(false);
-        return false;
-      }
-
-      setAuthReady(true);
-      return true;
-    } catch (err) {
-      console.error('Error checking auth state:', err);
-      setAuthReady(false);
-      return false;
-    }
-  };
+  const [isAuthenticating, setIsAuthenticating] = useState(true);
 
   const fetchRepositories = async () => {
     if (!user) {
@@ -80,78 +43,109 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
     setError(null);
 
     try {
-      // Wait for auth to be ready
-      const isAuthReady = await checkAuthState();
+      console.log('Attempting to fetch repositories...');
       
-      if (!isAuthReady) {
-        throw new Error('GitHub authentication not ready. Please try logging in again.');
+      // Get current session and verify it exists
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        throw new Error('No active session found. Please login again.');
       }
 
-      console.log('Fetching repositories for user:', user.id);
+      console.log('Session found, calling edge function...');
       
       const { data, error: funcError } = await supabase.functions.invoke('fetch-github-repos', {
-        body: { searchQuery: searchTerm }
+        body: { searchQuery: searchTerm || '' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        }
       });
 
+      console.log('Edge function response:', { data, funcError });
+
       if (funcError) {
-        console.error('Function error:', funcError);
-        throw funcError;
+        console.error('Function error details:', funcError);
+        throw new Error(`Failed to fetch repositories: ${funcError.message}`);
       }
 
       if (data && data.repositories) {
-        console.log('Repositories fetched:', data.repositories.length);
+        console.log('Repositories fetched successfully:', data.repositories.length);
         setRepositories(data.repositories);
       } else {
-        console.error('No repositories data returned:', data);
-        throw new Error('No repository data returned from GitHub');
+        console.warn('No repositories data returned:', data);
+        setRepositories([]);
       }
     } catch (err) {
       console.error('Error fetching repositories:', err);
-      setError(err.message || 'Failed to fetch repositories from GitHub');
+      setError(err instanceof Error ? err.message : 'Failed to fetch repositories from GitHub');
     } finally {
       setLoading(false);
     }
   };
 
+  // Wait for initial auth state to be determined
+  useEffect(() => {
+    const checkInitialAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        console.log('Initial auth check:', !!session);
+        setIsAuthenticating(false);
+        
+        // If we have a user and session, fetch repositories
+        if (user && session) {
+          fetchRepositories();
+        } else {
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error('Error checking initial auth:', error);
+        setIsAuthenticating(false);
+        setLoading(false);
+      }
+    };
+
+    checkInitialAuth();
+  }, [user]); // Only depend on user changes
+
   // Listen for auth state changes
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state changed:', event, session?.user?.id);
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          // Wait a bit for the session to be fully established
+        console.log('Auth state changed:', event, !!session);
+        
+        if (event === 'SIGNED_IN' && session && user) {
+          // Wait a bit for everything to settle
           setTimeout(() => {
-            setRetryCount(prev => prev + 1);
-          }, 1000);
+            fetchRepositories();
+          }, 500);
+        } else if (event === 'SIGNED_OUT') {
+          setRepositories([]);
+          setLoading(false);
         }
       }
     );
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [user, searchTerm]);
 
-  // Initial fetch when component mounts or dependencies change
+  // Handle search term changes (only if we already have a user and are not loading)
   useEffect(() => {
-    if (user) {
-      fetchRepositories();
-    } else {
-      setRepositories([]);
-      setLoading(false);
-      setAuthReady(false);
-    }
-  }, [user, searchTerm, retryCount]);
-
-  // Auto-retry mechanism for page refresh cases
-  useEffect(() => {
-    if (user && repositories.length === 0 && !loading && !error && retryCount < 3) {
-      const timer = setTimeout(() => {
-        console.log('No repositories found after initial load, retrying...', retryCount + 1);
-        setRetryCount(prev => prev + 1);
-      }, 2000);
+    if (user && !isAuthenticating && !loading && searchTerm !== undefined) {
+      const debounceTimer = setTimeout(() => {
+        fetchRepositories();
+      }, 300);
       
-      return () => clearTimeout(timer);
+      return () => clearTimeout(debounceTimer);
     }
-  }, [repositories, loading, error, retryCount, user]);
+  }, [searchTerm]);
+
+  // Manual retry mechanism
+  useEffect(() => {
+    if (retryCount > 0 && user && !isAuthenticating) {
+      fetchRepositories();
+    }
+  }, [retryCount]);
 
   // Filter repositories based on search term
   const filteredRepositories = repositories.filter(repo =>
@@ -179,7 +173,8 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
     return colors[language] || 'bg-gray-500';
   };
 
-  if (loading) {
+  // Show loading while authenticating or fetching
+  if (isAuthenticating || loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {[...Array(6)].map((_, i) => (
@@ -213,7 +208,7 @@ export const RepositoryList = ({ user, searchTerm, onRepositorySelect }: Reposit
           <RefreshCw className="w-4 h-4 mr-2" />
           Retry
         </Button>
-        {error.includes('authentication') && (
+        {error.includes('session') && (
           <p className="text-sm text-gray-600 mt-2">
             You may need to sign in with GitHub again
           </p>
