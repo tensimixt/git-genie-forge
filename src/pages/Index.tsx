@@ -7,12 +7,13 @@ import { GitHubAuth } from "@/components/GitHubAuth";
 import { RepositoryList } from "@/components/RepositoryList";
 import { UserProfile } from "@/components/UserProfile";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, logAuthState } from "@/integrations/supabase/client";
 
 const Index = () => {
   const { user, profile, loading, sessionFullyRestored } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [forceRefresh, setForceRefresh] = useState(0);
+  const [debugMode, setDebugMode] = useState(false);
 
   // Force a refresh of child components when auth state changes
   useEffect(() => {
@@ -58,6 +59,14 @@ const Index = () => {
     );
   }
 
+  const toggleDebugMode = async () => {
+    setDebugMode(!debugMode);
+    if (!debugMode) {
+      // Log auth state when enabling debug mode
+      await logAuthState();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -69,7 +78,16 @@ const Index = () => {
             </div>
             <h1 className="text-xl font-bold">Git Genie</h1>
           </div>
-          <UserProfile />
+          <div className="flex items-center space-x-4">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={toggleDebugMode}
+            >
+              {debugMode ? "Hide Debug" : "Show Debug"}
+            </Button>
+            <UserProfile />
+          </div>
         </div>
       </header>
 
@@ -106,6 +124,45 @@ const Index = () => {
             // TODO: Navigate to chat interface
           }}
         />
+        
+        {/* Debug Panel */}
+        {debugMode && (
+          <div className="mt-8 p-4 bg-gray-100 rounded-lg">
+            <h3 className="text-lg font-semibold mb-2">Debug Information</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <h4 className="font-medium">User:</h4>
+                <pre className="text-xs bg-white p-2 rounded mt-1 overflow-auto max-h-40">
+                  {JSON.stringify({
+                    id: user?.id,
+                    email: user?.email,
+                    app_metadata: user?.app_metadata,
+                    has_user_metadata: !!user?.user_metadata
+                  }, null, 2)}
+                </pre>
+              </div>
+              <div>
+                <h4 className="font-medium">Profile:</h4>
+                <pre className="text-xs bg-white p-2 rounded mt-1 overflow-auto max-h-40">
+                  {JSON.stringify(profile, null, 2)}
+                </pre>
+              </div>
+            </div>
+            <div className="mt-4">
+              <Button 
+                onClick={async () => {
+                  console.log("Manual session check triggered");
+                  await logAuthState();
+                  setForceRefresh(prev => prev + 1);
+                }}
+                variant="secondary"
+                size="sm"
+              >
+                Check Session & Refresh
+              </Button>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
