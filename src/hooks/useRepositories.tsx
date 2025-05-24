@@ -1,17 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 
 export function useRepositories() {
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile } = useAuth();
   const [repositories, setRepositories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [hasFetched, setHasFetched] = useState(false);
   const { toast } = useToast();
 
-  const fetchRepositories = async (searchQuery) => {
+  const fetchRepositories = useCallback(async (searchQuery) => {
     if (!user || !profile) {
       setRepositories([]);
       return;
@@ -21,7 +20,7 @@ export function useRepositories() {
     setError(null);
 
     try {
-      console.log('Fetching repositories...');
+      console.log('Fetching repositories for user:', user.id);
       const { data, error: funcError } = await supabase.functions.invoke('fetch-github-repos', {
         body: { searchQuery }
       });
@@ -30,7 +29,6 @@ export function useRepositories() {
 
       console.log('Repositories fetched:', data.repositories ? data.repositories.length : 0);
       setRepositories(data.repositories || []);
-      setHasFetched(true);
     } catch (err) {
       console.error('Error fetching repositories:', err);
       const errorMessage = 'Failed to fetch repositories from GitHub';
@@ -43,22 +41,42 @@ export function useRepositories() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, profile, toast]);
 
-  // Fetch repositories when user and profile are available
+  // Initial fetch when component mounts and user/profile are available
   useEffect(() => {
-    if (user && profile && !hasFetched) {
+    if (user && profile) {
       console.log('User and profile available, fetching repositories');
       fetchRepositories();
     }
-  }, [user, profile, hasFetched]);
+  }, [user, profile, fetchRepositories]);
 
-  // Reset hasFetched when user changes
+  // Add a special effect to handle page refresh
   useEffect(() => {
-    if (!user) {
-      setHasFetched(false);
-    }
-  }, [user]);
+    // This will run once when the component mounts
+    const handlePageRefresh = () => {
+      // Check if we're coming from a page refresh (not initial load)
+      const isPageRefresh = sessionStorage.getItem('app_initialized');
+      
+      if (isPageRefresh && user && profile) {
+        console.log('Page was refreshed, forcing repository fetch');
+        // Small delay to ensure auth is fully restored
+        setTimeout(() => {
+          fetchRepositories();
+        }, 1000);
+      }
+      
+      // Mark that the app has been initialized
+      sessionStorage.setItem('app_initialized', 'true');
+    };
+    
+    handlePageRefresh();
+    
+    // Clean up
+    return () => {
+      // No cleanup needed
+    };
+  }, [user, profile, fetchRepositories]);
 
   return {
     repositories,
