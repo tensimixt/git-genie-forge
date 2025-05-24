@@ -3,31 +3,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 
-interface Repository {
-  id: number;
-  name: string;
-  full_name: string;
-  description: string | null;
-  html_url: string;
-  language: string | null;
-  stargazers_count: number;
-  forks_count: number;
-  updated_at: string;
-  private: boolean;
-  owner: {
-    login: string;
-    avatar_url: string;
-  };
-}
-
 export function useRepositories() {
-  const { user, profile, loading: authLoading } = useAuth();
-  const [repositories, setRepositories] = useState<Repository[]>([]);
+  const { user, profile } = useAuth();
+  const [repositories, setRepositories] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(null);
   const { toast } = useToast();
 
-  const fetchRepositories = async (searchQuery?: string) => {
+  const fetchRepositories = async (searchQuery) => {
     if (!user || !profile) {
       setRepositories([]);
       return;
@@ -59,11 +42,10 @@ export function useRepositories() {
   };
 
   useEffect(() => {
-    // Only fetch repositories when auth is not in loading state and both user and profile exist
-    if (!authLoading && user && profile) {
+    if (user && profile) {
       fetchRepositories();
     }
-  }, [user, profile, authLoading]);
+  }, [user, profile]);
 
   return {
     repositories,
